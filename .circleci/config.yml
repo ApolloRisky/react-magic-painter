@@ -5,13 +5,28 @@ orbs:
   node: circleci/node@4.1.0
 
 jobs:
+  clean:
+    executor:
+      name: node/default
+      tag: '12.18'
+    steps:
+      - run: rm -rf build
+
   build:
     executor:
       name: node/default
       tag: '12.18'
     steps:
       - checkout
-      - run: node --version
-      - run: yarn --version
-      - run: yarn
+      - run: yarn install
       - run: yarn build
+      - run: yarn start
+
+workflows:
+  version: 2
+  main:
+    jobs:
+      - clean
+      - build:
+          requires:
+            - clean
