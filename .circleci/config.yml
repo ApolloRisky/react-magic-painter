@@ -1,32 +1,104 @@
-# Use the latest 2.1 version of CircleCI pipeline process engine. See: https://circleci.com/docs/2.0/configuration-reference
-version: 2.1
-
-orbs:
-  node: circleci/node@4.1.0
-
+defaults: &defaults
+  working_directory: ~/repo
+  docker:
+    - image: circleci/node:12.18
+version: 2
 jobs:
-  clean:
-    executor:
-      name: node/default
-      tag: '12.18'
+  checkout_code:
+    <<: *defaults
     steps:
-      - run: rm -rf build
+      - restore_cache:
+          keys:
+            - source-{{ .Branch }}-{{ .Revision }}
+            - source-{{ .Branch }}-
+            - source-
 
-  build:
-    executor:
-      name: node/default
-      tag: '12.18'
-    steps:
       - checkout
-      - run: yarn install
-      - run: yarn build
-      - run: yarn start
 
+      - save_cache:
+          key: source-{{ .Branch }}-{{ .Revision }}
+          paths:
+            - '~/repo'
+  install:
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: source-{{ .Branch }}-{{ .Revision }}
+      - restore_cache:
+          key: dependency-cache-{{ checksum "package.json" }}
+      - run:
+          name: 'Yarn install'
+          command: yarn install
+      - save_cache:
+          key: dependency-cache-{{ checksum "package.json" }}
+          paths:
+            - node_modules
+  test:
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: source-{{ .Branch }}-{{ .Revision }}
+      - restore_cache:
+          key: dependency-cache-{{ checksum "package.json" }}
+      - run:
+          name: 'Test'
+          command: npm run test
+  build:
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: source-{{ .Branch }}-{{ .Revision }}
+      - restore_cache:
+          key: dependency-cache-{{ checksum "package.json" }}
+      - run:
+          name: 'Build app'
+          command: npm run build
+      - persist_to_workspace:
+          root: ~/repo
+          paths:
+            - dist
+            - package.json
+  deploy:
+    <<: *defaults
+    environment:
+      - STAGING_BUCKET: staging-pace-mp
+      - PRODUCTION_BUCKET: YOUR_PRODUCTION_BUCKET_NAME
+      - STAGING_DISTRIBUTION_ID: EKAP8N32AXMR5
+      - PRODUCTION_DISTRIBUTION_ID: YOUR_PRODUCTION_DISTRIBUTION_ID
+    steps:
+      - attach_workspace:
+          at: ~/repo
+      - run: sudo apt-get update && sudo apt-get install -y python-dev
+      - run: sudo curl -O https://bootstrap.pypa.io/get-pip.py
+      - run: sudo python get-pip.py
+      - run: sudo pip install awscli --upgrade
+      - run: aws --version
+      - run: aws s3 ls
+      - run:
+          name: 'Deploy to S3'
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "main" ]; then
+              aws s3 sync dist/ s3://${PRODUCTION_BUCKET} --delete
+              aws cloudfront create-invalidation --distribution-id "${PRODUCTION_DISTRIBUTION_ID}" --paths /index.html
+            elif [ "${CIRCLE_BRANCH}" == "dev" ]; then
+              aws s3 sync dist/ s3://${STAGING_BUCKET} --delete
+              aws cloudfront create-invalidation --distribution-id "${STAGING_DISTRIBUTION_ID}" --paths /index.html
+            fi
 workflows:
   version: 2
-  main:
+  build_and_test:
     jobs:
-      - clean
+      - checkout_code
+      - install:
+          requires:
+            - checkout_code
+      - test:
+          requires:
+            - install
       - build:
           requires:
-            - clean
+            - install
+      - deploy:
+          requires:
+            - test
+            - build
