@@ -1,32 +1,104 @@
-# Use the latest 2.1 version of CircleCI pipeline process engine. See: https://circleci.com/docs/2.0/configuration-reference
+defaults: &defaults
+  working_directory: ~/repo
+  docker:
+    - image: circleci/node:12.18
+
 version: 2.1
 
 orbs:
-  node: circleci/node@4.1.0
+  aws-cli: circleci/aws-cli@1.3.1
 
 jobs:
-  clean:
-    executor:
-      name: node/default
-      tag: '12.18'
+  checkout_code:
+    <<: *defaults
     steps:
-      - run: rm -rf build
+      - restore_cache:
+          keys:
+            - source-{{ .Branch }}-{{ .Revision }}
+            - source-{{ .Branch }}-
+            - source-
 
-  build:
-    executor:
-      name: node/default
-      tag: '12.18'
-    steps:
       - checkout
-      - run: yarn install
-      - run: yarn build
-      - run: yarn start
+
+      - save_cache:
+          key: source-{{ .Branch }}-{{ .Revision }}
+          paths:
+            - '~/repo'
+  install:
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: source-{{ .Branch }}-{{ .Revision }}
+      - restore_cache:
+          key: dependency-cache-{{ checksum "package.json" }}
+      - run:
+          name: 'Yarn install'
+          command: yarn install
+      - save_cache:
+          key: dependency-cache-{{ checksum "package.json" }}
+          paths:
+            - node_modules
+  test:
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: source-{{ .Branch }}-{{ .Revision }}
+      - restore_cache:
+          key: dependency-cache-{{ checksum "package.json" }}
+      - run:
+          name: 'Test'
+          command: npm run test
+  build:
+    <<: *defaults
+    steps:
+      - restore_cache:
+          key: source-{{ .Branch }}-{{ .Revision }}
+      - restore_cache:
+          key: dependency-cache-{{ checksum "package.json" }}
+      - run:
+          name: 'Build app'
+          command: yarn build
+      - persist_to_workspace:
+          root: ~/repo
+          paths:
+            - build
+            - package.json
+  deploy:
+    <<: *defaults
+    executor: aws-cli/default
+    steps:
+      - attach_workspace:
+          at: ~/repo
+      - aws-cli/setup:
+          profile-name: circleci
+      - run: aws --version
+      - run: aws s3 ls
+      - run:
+          name: 'Deploy to S3'
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+              aws s3 sync build/ s3://${PRODUCTION_S3_BUCKET} --delete
+              aws cloudfront create-invalidation --distribution-id "${PRODUCTION_CLOUDFRONT_DISTRIBUTION_ID}" --paths /index.html
+            elif [ "${CIRCLE_BRANCH}" == "dev" ]; then
+              aws s3 sync build/ s3://${STAGING_S3_BUCKET} --delete
+              aws cloudfront create-invalidation --distribution-id "${STAGING_CLOUDFRONT_DISTRIBUTION_ID}" --paths /index.html
+            fi
 
 workflows:
   version: 2
-  main:
+  build_and_test:
     jobs:
-      - clean
+      - checkout_code
+      - install:
+          requires:
+            - checkout_code
+      - test:
+          requires:
+            - install
       - build:
           requires:
-            - clean
+            - install
+      - deploy:
+          requires:
+            - test
+            - build
