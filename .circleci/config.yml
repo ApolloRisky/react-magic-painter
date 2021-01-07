@@ -1,7 +1,14 @@
-defaults: &defaults
+job_config_defaults: &job_config_defaults
   working_directory: ~/repo
   docker:
     - image: circleci/node:12.18
+
+workflow_job_filters: &workflow_job_filters
+  filters:
+    branches:
+      only:
+        - main
+        - dev
 
 version: 2.1
 
@@ -10,7 +17,7 @@ orbs:
 
 jobs:
   checkout_code:
-    <<: *defaults
+    <<: *job_config_defaults
     steps:
       - restore_cache:
           keys:
@@ -25,7 +32,7 @@ jobs:
           paths:
             - '~/repo'
   install:
-    <<: *defaults
+    <<: *job_config_defaults
     steps:
       - restore_cache:
           key: source-{{ .Branch }}-{{ .Revision }}
@@ -39,7 +46,7 @@ jobs:
           paths:
             - node_modules
   test:
-    <<: *defaults
+    <<: *job_config_defaults
     steps:
       - restore_cache:
           key: source-{{ .Branch }}-{{ .Revision }}
@@ -49,7 +56,7 @@ jobs:
           name: 'Test'
           command: npm run test
   build:
-    <<: *defaults
+    <<: *job_config_defaults
     steps:
       - restore_cache:
           key: source-{{ .Branch }}-{{ .Revision }}
@@ -64,7 +71,7 @@ jobs:
             - build
             - package.json
   deploy:
-    <<: *defaults
+    <<: *job_config_defaults
     executor: aws-cli/default
     steps:
       - attach_workspace:
@@ -93,6 +100,7 @@ workflows:
           requires:
             - checkout_code
       - test:
+          <<: *workflow_job_filters
           requires:
             - install
       - build:
