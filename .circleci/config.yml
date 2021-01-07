@@ -83,7 +83,7 @@ jobs:
       - run:
           name: 'Deploy to S3'
           command: |
-            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+            if [ "${CIRCLE_BRANCH}" == "main" ]; then
               aws s3 sync build/ s3://${PRODUCTION_S3_BUCKET} --delete
               aws cloudfront create-invalidation --distribution-id "${PRODUCTION_CLOUDFRONT_DISTRIBUTION_ID}" --paths /index.html
             elif [ "${CIRCLE_BRANCH}" == "dev" ]; then
@@ -95,8 +95,10 @@ workflows:
   version: 2
   build_and_test:
     jobs:
-      - checkout_code
+      - checkout_code:
+          <<: *workflow_job_filters
       - install:
+          <<: *workflow_job_filters
           requires:
             - checkout_code
       - test:
@@ -104,9 +106,11 @@ workflows:
           requires:
             - install
       - build:
+          <<: *workflow_job_filters
           requires:
             - install
       - deploy:
+          <<: *workflow_job_filters
           requires:
             - test
             - build
