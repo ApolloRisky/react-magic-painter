@@ -1,29 +1,21 @@
-import React, { useState, useCallback } from "react";
-import { Canvas } from "./components/Canvas";
-import { Goo } from "./components/Goo";
-import { Intro } from "./components/Intro";
-import { Toolbar } from "./components/Toolbar";
-import { usePainter } from "./hooks/usePainter";
+import React from "react";
+import { Route, Switch } from "react-router-dom";
+
+import Home from './pages/Home';
+import ContactInfo from "./pages/ContactInfo";
+import NotFound from "./pages/NotFound";
 
 const App = () => {
-  const [dateUrl, setDataUrl] = useState("#");
-  const [{ canvas, isReady, ...state }, { init, ...api }] = usePainter();
-
-  const handleDownload = useCallback(() => {
-    if (!canvas || !canvas.current) return;
-
-    setDataUrl(canvas.current.toDataURL("image/png"));
-  }, [canvas]);
-
-  const toolbarProps = { ...state, ...api, dateUrl, handleDownload };
-
   return (
-    <>
-      <Intro isReady={isReady} init={init} />
-      <Toolbar {...toolbarProps} />
-      <Canvas width={state.currentWidth} canvasRef={canvas} />
-      <Goo />
-    </>
+    <Switch>
+      <Route exact path='/'>
+        <Home />
+      </Route>
+      <Route exact path='/contact'>
+        <ContactInfo />
+      </Route>
+      <Route component={NotFound} />
+    </Switch>
   );
 };
 
